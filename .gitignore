@@ -1,2 +1,5 @@
 .venv/
-.env/
+.env
+.ssh/
+__pycache__/
+storage.db
