@@ -20,7 +20,7 @@ class User(Base):
 class Bot(Base):
     __tablename__ = 'bots'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    token = Column(String)
+    token = Column(String, unique=True)
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     chat_id = Column(BigInteger, ForeignKey('chats.id'), unique=True)
 
@@ -43,6 +43,7 @@ class Chat(Base):
 
 
 engine = create_engine('sqlite:///storage.db')
+Base.metadata.drop_all(engine)
 Base.metadata.create_all(engine)
 
 Session = sessionmaker(bind=engine)

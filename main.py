@@ -4,12 +4,19 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+from sqlalchemy.exc import IntegrityError
+
+import ssl
 
 import aiohttp
 
 from dotenv import load_dotenv
 
 from database import session_scope, User as UserModel, Bot as BotModel, Chat as ChatModel
+
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 
 import asyncio
@@ -19,6 +26,7 @@ load_dotenv()
 
 dp = Dispatcher()
 BOT_TOKEN = getenv("BOT_TOKEN")
+SERVICE_URL = getenv("SERVICE_URL")
 bot = Bot(token=BOT_TOKEN)
 
 bot_form_router = Router()
@@ -32,6 +40,11 @@ class SUPPORT_BOT(StatesGroup):
 async def fetch(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
+            return await response.json()
+        
+async def set_webhook(user_answer):
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f'{SERVICE_URL}/setWebhook', json={'token': user_answer}, ssl=ssl_context) as response:
             return await response.json()
         
 async def fetch_all(urls):
@@ -60,16 +73,24 @@ async def token_input_handler(message: Message, state: FSMContext) -> None:
     user_answer = message.text
     response = await fetch(f"https://api.telegram.org/bot{user_answer}/getMe")
     if response['ok']:
-
         with session_scope() as session:
-            new_bot = BotModel(token=user_answer, user_id=message.from_user.id)
-            session.add(new_bot)
+            try: 
+                new_bot = BotModel(token=user_answer, user_id=message.from_user.id)
+                session.add(new_bot)
+                session.commit()
+            except IntegrityError as e:
+                session.rollback()
+                await state.set_state(SUPPORT_BOT.token)
+                await message.answer('Токен уже используется. Попробуйте снова.')
+                return
 
         await state.clear()
+        await set_webhook(user_answer)
         await message.answer('Ваш бот успешно привязан!')
     else:
         await state.set_state(SUPPORT_BOT.token)
         await message.answer('Не верный токен! Попробуйте снова.')
+
 
 @dp.message(Command('add_bot'))
 async def add_bot_handler(message: Message, state: FSMContext) -> None:
